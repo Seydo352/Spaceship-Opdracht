@@ -1,0 +1,1 @@
+a:3:{s:7:"munitie";i:100;s:12:"levenspunten";i:85;s:8:"isLevend";b:1;}
