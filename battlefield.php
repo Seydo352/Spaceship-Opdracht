@@ -1,250 +1,239 @@
 <?php
-// Foutmeldingen inschakelen voor debugging
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+// Inclusie van de benodigde klassen
+include_once 'SchipAlpha.php'; // SchipAlpha klasse
+include_once 'SchipBeta.php';  // SchipBeta klasse
+include_once  'Schip.php';
 
-// Zorg dat de class bestanden 'SchipAlpha' en 'SchipBeta' worden geladen voordat de sessie begint
-if (!file_exists('SchipAlpha.php') || !file_exists('SchipBeta.php') || !file_exists('Schip.php')) {
-    die('Eén of meer benodigde bestanden ontbreken.');
+session_start(); // Start de sessie
+
+// Functie om de vloten te initialiseren
+function initializeFleets() {
+    return [
+        'fleetAlpha' => [ // Alpha vloot bestaat uit 2 schepen
+            new SchipAlpha(true, 100, 100),
+            new SchipAlpha(true, 100, 100)
+        ],
+        'fleetBeta' => [ // Beta vloot bestaat uit 2 schepen
+            new SchipBeta(true, 100, 100),
+            new SchipBeta(true, 100, 100)
+        ]
+    ];
 }
 
-include_once 'SchipAlpha.php';
-include_once 'SchipBeta.php';
-
-session_start();  // Start de sessie
-
-// Controleer of de sessie correct is gestart
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    die('Kon geen sessie starten.');
+// Controleer of er al een vloot in de sessie bestaat, anders maak een nieuwe
+if (!isset($_SESSION['fleets'])) {
+    $_SESSION['fleets'] = initializeFleets(); // Zet nieuwe vloten in de sessie
 }
 
-// Bestandsnamen voor opslaan en laden
-$opslaanPadAlpha = 'schipalpha_opslaan.txt';
-$opslaanPadBeta = 'schipbeta_opslaan.txt';
+// Haal de vloten op uit de sessie
+$fleets = $_SESSION['fleets'];
 
-// Initialiseer schepen als ze niet in de sessie staan of als het gevecht voorbij is
-function resetBattle()
-{
-    $_SESSION['schipalpha'] = new SchipAlpha(true, 100, 100);
-    $_SESSION['schipbeta'] = new SchipBeta(true, 100, 100);
+// Functie om aan te vallen, alleen de tegenstander wordt beschadigd
+function attack($attackerFleet, &$defenderFleet) {
+    foreach ($attackerFleet as $attacker) { // Doorloop elk schip in de aanvallende vloot
+        if ($attacker->isLevend) { // Controleer of het schip nog leeft
+            foreach ($defenderFleet as &$defender) { // Zoek een levend schip in de verdedigende vloot
+                if ($defender->isLevend) { 
+                    $damage = 0; // Start met geen schade
+
+                    // Gebruik kogels als het schip deze nog heeft
+                    if ($attacker->kogels > 0) {
+                        $damage += $attacker->schietKogels(); // Voeg kogelschade toe
+                    }
+
+                    // Gebruik de straal als deze beschikbaar is
+                    if ($attacker->straal > 0) {
+                        $damage += $attacker->gebruikStraal(); // Voeg straalschade toe
+                    }
+
+                    // Breng schade aan het verdedigende schip toe
+                    $defender->damage($damage);
+
+                    // Controleer of het schip nu "dood" is
+                    if ($defender->levenspunten <= 0) {
+                        $defender->levenspunten = 0; // Zorg ervoor dat de HP niet negatief wordt
+                        $defender->isLevend = false; // Markeer het schip als dood
+                    }
+
+                    break; // Stop na het beschadigen van één verdediger
+                }
+            }
+        }
+    }
 }
 
-// Controleer of een reset nodig is
-if (!isset($_SESSION['schipalpha']) || !isset($_SESSION['schipbeta'])) {
-    resetBattle();
-}
-
-// Haal beide schepen uit de sessie
-$schipAlpha = $_SESSION['schipalpha'];
-$schipBeta = $_SESSION['schipbeta'];
-
-// Verwerk acties (schieten, opslaan, laden, resetten)
+// Verwerk de actie op basis van de knop die is ingedrukt
 if (isset($_POST['actie'])) {
-    if ($schipAlpha->isLevend && $schipBeta->isLevend) {
-        if ($_POST['actie'] == 'alpha_schiet') {
-            // SchipAlpha schiet op SchipBeta
-            $damage = $schipAlpha->schietKogels();
-            $schipBeta->damage($damage);
-
-        } elseif ($_POST['actie'] == 'beta_schiet') {
-            // SchipBeta schiet op SchipAlpha
-            $damage = $schipBeta->schietKogels();
-            $schipAlpha->damage($damage);
-
-        } elseif ($_POST['actie'] == 'alpha_straal') {
-            // SchipAlpha gebruikt de straal
-            $damage = $schipAlpha->gebruikStraal();
-            $schipBeta->damage($damage);
-
-        } elseif ($_POST['actie'] == 'beta_straal') {
-            // SchipBeta gebruikt de straal
-            $damage = $schipBeta->gebruikStraal();
-            $schipAlpha->damage($damage);
-
-        }
+    if ($_POST['actie'] == 'alpha_attack') {
+        attack($fleets['fleetAlpha'], $fleets['fleetBeta']); // Alpha valt Beta aan
+    } elseif ($_POST['actie'] == 'beta_attack') {
+        attack($fleets['fleetBeta'], $fleets['fleetAlpha']); // Beta valt Alpha aan
+    } elseif ($_POST['actie'] == 'reset') {
+        $_SESSION['fleets'] = initializeFleets(); // Reset de vloten naar de originele status
+        $fleets = $_SESSION['fleets']; // Werk de sessie bij
     }
+}
 
-    if ($_POST['actie'] == 'opslaan') {
-        // Sla de status van beide schepen op
-        $schipAlpha->opslaan($opslaanPadAlpha);
-        $schipBeta->opslaan($opslaanPadBeta);
-        echo "Voortgang opgeslagen!<br>";
-
-    } elseif ($_POST['actie'] == 'laden') {
-        // Laad de status van beide schepen
-        if (file_exists($opslaanPadAlpha) && file_exists($opslaanPadBeta)) {
-            $schipAlpha->laden($opslaanPadAlpha);
-            $schipBeta->laden($opslaanPadBeta);
-            echo "Voortgang geladen!<br>";
-        } else {
-            echo "Geen opgeslagen voortgang gevonden!<br>";
+// Controleer of schepen "dood" zijn en markeer deze correct
+foreach ($fleets as &$fleet) {
+    foreach ($fleet as &$ship) {
+        if ($ship->levenspunten <= 0) {
+            $ship->isLevend = false; // Markeer schepen met 0 HP als dood
         }
     }
 }
 
-// Controleer of het spel voorbij is en reset automatisch
-if (!$schipAlpha->isLevend || !$schipBeta->isLevend) {
-    resetBattle();
-    header("Location: battlefield.php");
-    exit();
-}
+// Sla de bijgewerkte vlootstatus terug op in de sessie
+$_SESSION['fleets'] = $fleets;
 
-// Werk de sessie bij met de nieuwe status
-$_SESSION['schipalpha'] = $schipAlpha;
-$_SESSION['schipbeta'] = $schipBeta;
+// Bereken de totale levenspunten van elke vloot voor de grafiek
+$alphaHealth = array_sum(array_map(fn($ship) => max(0, $ship->levenspunten), $fleets['fleetAlpha']));
+$betaHealth = array_sum(array_map(fn($ship) => max(0, $ship->levenspunten), $fleets['fleetBeta']));
 ?>
-
 
 <!doctype html>
 <html lang="nl">
-
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SchipAlpha vs SchipBeta</title>
+    <title>Vlootgevecht</title>
     <style>
-        /* Vernieuwde CSS */
+        /* Algemene stijl voor de pagina */
         body {
+            font-family: Arial, sans-serif;
             margin: 0;
             padding: 0;
-            background: radial-gradient(circle, #ff7b54, #ff6b6b);
-            font-family: 'Verdana', sans-serif;
+            background: radial-gradient(circle, #2d89ef, #1e1e1e);
             color: #fff;
             text-align: center;
-            min-height: 100vh;
             display: flex;
             flex-direction: column;
-            justify-content: center;
             align-items: center;
+            justify-content: center;
+            min-height: 100vh;
         }
 
         h2 {
-            font-size: 48px;
-            margin-bottom: 15px;
+            font-size: 36px;
             text-shadow: 2px 2px 5px rgba(0, 0, 0, 0.5);
         }
 
-        p {
-            font-size: 18px;
-            margin: 10px 0;
-        }
-
-        hr {
-            width: 90%;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            margin: 20px auto;
-        }
-
-        form {
-            margin: 15px 0;
+        .fleet-container {
             display: flex;
-            flex-direction: column;
-            align-items: center;
+            justify-content: center;
+            gap: 50px;
+            margin-top: 20px;
+        }
+
+        .fleet {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 20px;
+            width: 300px;
+            text-align: left;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .fleet h3 {
+            font-size: 24px;
+            color: #00d4ff;
+            text-align: center;
+        }
+
+        .ship-status {
+            margin: 10px 0;
         }
 
         button {
-            background-color: #141e30;
-            border: 2px solid #4caf50;
-            border-radius: 30px;
-            color: #fff;
-            padding: 12px 30px;
+            background: #00d4ff;
+            border: none;
+            color: #000;
+            padding: 10px 20px;
             font-size: 16px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
             margin: 10px;
             cursor: pointer;
-            transition: all 0.3s ease-in-out;
-            box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.3);
+            border-radius: 5px;
+            transition: background 0.3s;
         }
 
         button:hover {
-            background-color: #1e293b;
-            border-color: #80ffdb;
-            transform: scale(1.05);
+            background: #009fbb;
         }
 
-        button:disabled {
-            background-color: #555;
-            cursor: not-allowed;
-            border-color: #999;
-        }
-
-        .container {
-            background: rgba(0, 0, 0, 0.2);
-            padding: 20px;
-            border-radius: 20px;
-            box-shadow: 0px 6px 12px rgba(0, 0, 0, 0.4);
-            width: 90%;
-            max-width: 600px;
-        }
-
-        h3 {
-            font-size: 28px;
-            color: #ffcbcb;
-            margin-top: 20px;
-            text-shadow: 1px 1px 4px rgba(0, 0, 0, 0.5);
-        }
-
-        p.defeated {
-            font-size: 20px;
-            color: #ff1744;
-            font-weight: bold;
-            margin: 10px 0;
-        }
-
-        .status {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .status p {
-            font-size: 16px;
-            color: #f7f7f7;
-            margin: 5px 0;
-        }
-
-        .status strong {
-            font-size: 18px;
-            color: #80ffdb;
+        canvas {
+            margin-top: 30px;
+            background: #1e1e1e;
+            border: 1px solid #00d4ff;
+            border-radius: 5px;
+            padding: 10px;
         }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-
 <body>
-    <h2>SchipAlpha vs SchipBeta</h2>
-    <div class="container">
-        <div class="status">
-            <p><strong>Status SchipAlpha:</strong></p>
-            <p>Levenspunten: <?= $schipAlpha->levenspunten ?></p>
-            <p>Kogels: <?= $schipAlpha->kogels ?></p>
-            <p>Straal: <?= $schipAlpha->straal ?></p>
-            <p>Levend: <?= $schipAlpha->isLevend ? 'Ja' : 'Nee' ?></p>
+    <h2>Vlootgevecht: 2v2</h2>
+    <div class="fleet-container">
+        <div class="fleet">
+            <h3>Vloot Alpha</h3>
+            <?php foreach ($fleets['fleetAlpha'] as $index => $ship): ?>
+                <div class="ship-status">
+                    <p><strong>Schip <?= $index + 1 ?>:</strong></p>
+                    <p>HP: <?= max(0, $ship->levenspunten) ?></p>
+                    <p>Status: <?= $ship->isLevend ? "Levend" : "Gehavend" ?></p>
+                </div>
+            <?php endforeach; ?>
         </div>
-        <hr>
-        <div class="status">
-            <p><strong>Status SchipBeta:</strong></p>
-            <p>Levenspunten: <?= $schipBeta->levenspunten ?></p>
-            <p>Kogels: <?= $schipBeta->kogels ?></p>
-            <p>Straal: <?= $schipBeta->straal ?></p>
-            <p>Levend: <?= $schipBeta->isLevend ? 'Ja' : 'Nee' ?></p>
+        <div class="fleet">
+            <h3>Vloot Beta</h3>
+            <?php foreach ($fleets['fleetBeta'] as $index => $ship): ?>
+                <div class="ship-status">
+                    <p><strong>Schip <?= $index + 1 ?>:</strong></p>
+                    <p>HP: <?= max(0, $ship->levenspunten) ?></p>
+                    <p>Status: <?= $ship->isLevend ? "Levend" : "Gehavend" ?></p>
+                </div>
+            <?php endforeach; ?>
         </div>
     </div>
 
     <form method="post" action="">
-        <button type="submit" name="actie" value="alpha_schiet">SchipAlpha Schiet</button>
-        <button type="submit" name="actie" value="beta_schiet">SchipBeta Schiet</button>
-        <br>
-        <button type="submit" name="actie" value="alpha_straal">SchipAlpha Gebruikt Straal</button>
-        <button type="submit" name="actie" value="beta_straal">SchipBeta Gebruikt Straal</button>
+        <button type="submit" name="actie" value="alpha_attack">Alpha valt aan</button>
+        <button type="submit" name="actie" value="beta_attack">Beta valt aan</button>
+        <button type="submit" name="actie" value="reset">Reset gevecht</button>
     </form>
 
-    <form method="post" action="">
-        <button type="submit" name="actie" value="opslaan">Opslaan</button>
-        <button type="submit" name="actie" value="laden">Laden</button>
-    </form>
+    <canvas id="battleChart" width="400" height="200"></canvas>
+
+    <script>
+        // JavaScript voor de grafiek met Chart.js
+        const ctx = document.getElementById('battleChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'bar', // Grafiektype: staafdiagram
+            data: {
+                labels: ['Vloot Alpha', 'Vloot Beta'], // Labels voor de vloten
+                datasets: [{
+                    label: 'Totale levenspunten',
+                    data: [<?= $alphaHealth ?>, <?= $betaHealth ?>], // Gegevens voor de grafiek
+                    backgroundColor: ['rgba(54, 162, 235, 0.5)', 'rgba(255, 99, 132, 0.5)'], // Kleuren
+                    borderColor: ['rgba(54, 162, 235, 1)', 'rgba(255, 99, 132, 1)'], // Randkleuren
+                    borderWidth: 2 // Dikte van de randen
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true // Zorg dat de Y-as begint bij 0
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#fff', // Kleur van de labels
+                            font: { size: 16 } // Grootte van de labels
+                        }
+                    }
+                }
+            }
+        });
+    </script>
 </body>
-
 </html>
